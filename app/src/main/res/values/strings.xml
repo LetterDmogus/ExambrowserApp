@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">ExamBro</string>
+    <string name="setup_title">Pengaturan Sesi Ujian</string>
+    <string name="input_pin_hint">Masukkan PIN Pengawas</string>
+    <string name="start_exam">Mulai Ujian</string>
+    <string name="exit_prompt_title">Keluar Ujian</string>
+    <string name="exit_prompt_msg">Masukkan PIN Pengawas untuk keluar</string>
+    <string name="confirm">Konfirmasi</string>
+    <string name="cancel">Batal</string>
+    <string name="wrong_pin">PIN Salah!</string>
+</resources>
