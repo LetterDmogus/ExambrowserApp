@@ -9,7 +9,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
-import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +16,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -27,7 +28,8 @@ class MainActivity : AppCompatActivity() {
     private var isExamStarted = false
 
     private lateinit var webView: WebView
-    private lateinit var btnExit: ImageButton
+    private lateinit var headerBar: LinearLayout
+    private lateinit var btnExitAction: Button
     private lateinit var overlaySetup: LinearLayout
     private lateinit var etSetupPin: EditText
     private lateinit var btnStart: Button
@@ -44,7 +46,8 @@ class MainActivity : AppCompatActivity() {
 
         // Initialize views
         webView = findViewById(R.id.webView)
-        btnExit = findViewById(R.id.btnExit)
+        headerBar = findViewById(R.id.headerBar)
+        btnExitAction = findViewById(R.id.btnExitAction)
         overlaySetup = findViewById(R.id.overlaySetup)
         etSetupPin = findViewById(R.id.etSetupPin)
         btnStart = findViewById(R.id.btnStart)
@@ -57,8 +60,6 @@ class MainActivity : AppCompatActivity() {
             etSetupPin.visibility = View.GONE
             btnStart.visibility = View.GONE
             overlaySetup.visibility = View.VISIBLE
-            // Note: overlaySetup should contain a mechanism for "Resume PIN" entry, 
-            // but the prompt says to KEEP the overlay visible for it.
         }
 
         setupWebView()
@@ -67,7 +68,7 @@ class MainActivity : AppCompatActivity() {
             startExam()
         }
 
-        btnExit.setOnClickListener {
+        btnExitAction.setOnClickListener {
             showExitDialog()
         }
     }
@@ -81,6 +82,12 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val pin = prefs.getString(KEY_PIN, "")
         return if (pin.isNullOrEmpty()) null else pin
+    }
+
+    private suspend fun validatePinWithBackend(pin: String): Boolean {
+        // TODO: Implement Retrofit/API call here later
+        // For now, return pin == sessionPin
+        return pin == getSavedPin()
     }
 
     private fun setupWebView() {
@@ -115,7 +122,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         overlaySetup.visibility = View.GONE
-        btnExit.visibility = View.VISIBLE
+        headerBar.visibility = View.VISIBLE
 
         webView.loadUrl("https://elsph.permataharapanku.sch.id/")
     }
@@ -130,16 +137,18 @@ class MainActivity : AppCompatActivity() {
             .setView(input)
             .setPositiveButton("Exit") { _, _ ->
                 val enteredPin = input.text.toString()
-                if (enteredPin == sessionPin) {
-                    savePin("")
-                    try {
-                        stopLockTask()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                lifecycleScope.launch {
+                    if (validatePinWithBackend(enteredPin)) {
+                        savePin("")
+                        try {
+                            stopLockTask()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        finishAffinity()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Wrong PIN", Toast.LENGTH_SHORT).show()
                     }
-                    finishAffinity()
-                } else {
-                    Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -164,7 +173,7 @@ class MainActivity : AppCompatActivity() {
             // Forcefully show overlay and hide WebView until unlocked
             overlaySetup.visibility = View.VISIBLE
             webView.visibility = View.GONE
-            btnExit.visibility = View.GONE
+            headerBar.visibility = View.GONE
             
             // Show fields for Resume entry
             etSetupPin.visibility = View.VISIBLE
@@ -173,20 +182,22 @@ class MainActivity : AppCompatActivity() {
             btnStart.text = "Resume Exam"
             
             btnStart.setOnClickListener {
-                val pin = etSetupPin.text.toString()
-                if (pin == sessionPin) {
-                    overlaySetup.visibility = View.GONE
-                    webView.visibility = View.VISIBLE
-                    btnExit.visibility = View.VISIBLE
-                    etSetupPin.text.clear()
-                    
-                    // Reset to initial state if needed, but startExam will handle next start
-                    // Ensure URL is loaded if first time resuming
-                    if (webView.url == null) {
-                        webView.loadUrl("https://elsph.permataharapanku.sch.id/")
+                val enteredPin = etSetupPin.text.toString()
+                lifecycleScope.launch {
+                    if (validatePinWithBackend(enteredPin)) {
+                        overlaySetup.visibility = View.GONE
+                        webView.visibility = View.VISIBLE
+                        headerBar.visibility = View.VISIBLE
+                        etSetupPin.text.clear()
+                        
+                        // Reset to initial state if needed, but startExam will handle next start
+                        // Ensure URL is loaded if first time resuming
+                        if (webView.url == null) {
+                            webView.loadUrl("https://elsph.permataharapanku.sch.id/")
+                        }
+                    } else {
+                        Toast.makeText(this@MainActivity, "Wrong PIN", Toast.LENGTH_SHORT).show()
                     }
-                } else {
-                    Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show()
                 }
             }
         } else if (isExamStarted) {
