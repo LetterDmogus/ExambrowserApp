@@ -1,5 +1,6 @@
 package com.example.exambro
 
+import android.content.Context
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
@@ -18,6 +19,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : AppCompatActivity() {
+
+    private val PREFS_NAME = "ExambroPrefs"
+    private val KEY_PIN = "session_pin"
 
     private var sessionPin: String? = null
     private var isExamStarted = false
@@ -45,6 +49,18 @@ class MainActivity : AppCompatActivity() {
         etSetupPin = findViewById(R.id.etSetupPin)
         btnStart = findViewById(R.id.btnStart)
 
+        val savedPin = getSavedPin()
+        if (savedPin != null) {
+            sessionPin = savedPin
+            isExamStarted = true
+            // Hide setup fields for "Resume" mode
+            etSetupPin.visibility = View.GONE
+            btnStart.visibility = View.GONE
+            overlaySetup.visibility = View.VISIBLE
+            // Note: overlaySetup should contain a mechanism for "Resume PIN" entry, 
+            // but the prompt says to KEEP the overlay visible for it.
+        }
+
         setupWebView()
 
         btnStart.setOnClickListener {
@@ -54,6 +70,17 @@ class MainActivity : AppCompatActivity() {
         btnExit.setOnClickListener {
             showExitDialog()
         }
+    }
+
+    private fun savePin(pin: String) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_PIN, pin).apply()
+    }
+
+    private fun getSavedPin(): String? {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val pin = prefs.getString(KEY_PIN, "")
+        return if (pin.isNullOrEmpty()) null else pin
     }
 
     private fun setupWebView() {
@@ -74,10 +101,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         sessionPin = pin
+        savePin(pin)
         isExamStarted = true
 
         // Apply FLAG_SECURE
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+
+        // Native Kiosk Mode
+        try {
+            startLockTask()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         overlaySetup.visibility = View.GONE
         btnExit.visibility = View.VISIBLE
@@ -96,6 +131,12 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Exit") { _, _ ->
                 val enteredPin = input.text.toString()
                 if (enteredPin == sessionPin) {
+                    savePin("")
+                    try {
+                        stopLockTask()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                     finishAffinity()
                 } else {
                     Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show()
@@ -107,7 +148,48 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (isExamStarted) {
+        val savedPin = getSavedPin()
+        if (savedPin != null) {
+            isExamStarted = true
+            sessionPin = savedPin
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+            
+            // Native Kiosk Mode
+            try {
+                startLockTask()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // Forcefully show overlay and hide WebView until unlocked
+            overlaySetup.visibility = View.VISIBLE
+            webView.visibility = View.GONE
+            btnExit.visibility = View.GONE
+            
+            // Show fields for Resume entry
+            etSetupPin.visibility = View.VISIBLE
+            btnStart.visibility = View.VISIBLE
+            etSetupPin.hint = "Enter PIN to Resume"
+            btnStart.text = "Resume Exam"
+            
+            btnStart.setOnClickListener {
+                val pin = etSetupPin.text.toString()
+                if (pin == sessionPin) {
+                    overlaySetup.visibility = View.GONE
+                    webView.visibility = View.VISIBLE
+                    btnExit.visibility = View.VISIBLE
+                    etSetupPin.text.clear()
+                    
+                    // Reset to initial state if needed, but startExam will handle next start
+                    // Ensure URL is loaded if first time resuming
+                    if (webView.url == null) {
+                        webView.loadUrl("https://elsph.permataharapanku.sch.id/")
+                    }
+                } else {
+                    Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else if (isExamStarted) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
